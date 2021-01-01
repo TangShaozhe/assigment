@@ -125,6 +125,40 @@ GLuint create_shader(GLuint type, const std::string& source)
 		source.size()
 	};
 	glShaderSource(ret, 1, sources, lengths);
+	glCompileShader(ret);
+	int ok;
+	glGetShaderiv(ret, GL_COMPILE_STATUS, &ok);
+	if (ok == GL_FALSE)
+	{
+		int len;
+		glGetShaderiv(ret, GL_INFO_LOG_LENGTH, &len);
+		std::string str;
+		str.resize(len);
+		glGetShaderInfoLog(ret, str.size(), &len, (char*)str.data());
+		printf("%s\n", str.c_str());
+		assert(0);
+	}
+	return ret;
+}
+
+GLuint create_program(GLuint vertex_shader, GLuint fragment_shader)
+{
+	auto ret = glCreateProgram();
+	glAttachShader(ret, vertex_shader);
+	glAttachShader(ret, fragment_shader);
+	glLinkProgram(ret);
+	int ok;
+	glGetProgramiv(ret, GL_LINK_STATUS, &ok);
+	if (ok == GL_FALSE)
+	{
+		int len;
+		glGetProgramiv(ret, GL_INFO_LOG_LENGTH, &len);
+		std::string str;
+		str.resize(len);
+		glGetProgramInfoLog(ret, str.size(), &len, (char*)str.data());
+		printf("%s\n", str.c_str());
+		assert(0);
+	}
 	return ret;
 }
 
@@ -328,26 +362,17 @@ int main()
 	prev_mousebuttonfun = glfwSetMouseButtonCallback(window, mouse_button_callback);
 	prev_cursorposfun = glfwSetCursorPosCallback(window, cursor_position_callback);
 
-	auto vertex_shader = create_shader(GL_VERTEX_SHADER,
+	auto grid_program = create_program(create_shader(GL_VERTEX_SHADER, 
 		"#version 120\n"
 		"void main() {\n"
-		"	gl_FrontColor = gl_Color;"
-		"	gl_Position = gl_ProjectionMatrix * gl_ModelViewMatrix * gl_Vertex;"
-		"}");
-	auto fragment_shader = create_shader(GL_FRAGMENT_SHADER,
+		"	gl_FrontColor = gl_Color;\n"
+		"	gl_BackColor = gl_Color;\n"
+		"	gl_Position = gl_ProjectionMatrix * gl_ModelViewMatrix * gl_Vertex;\n"
+		"}"), create_shader(GL_FRAGMENT_SHADER, 
 		"#version 120\n"
 		"void main() {\n"
-		"	gl_FragColor = gl_Color;"
-		"}");
-	glCompileShader(vertex_shader);
-	check_gl_err();
-	glCompileShader(fragment_shader);
-	check_gl_err();
-	auto program = glCreateProgram();
-	glAttachShader(program, vertex_shader);
-	glAttachShader(program, fragment_shader);
-	glLinkProgram(program);
-	check_gl_err();
+		"	gl_FragColor = gl_Color;\n"
+		"}"));
 
 	auto quadrics = gluNewQuadric();
 
@@ -397,7 +422,7 @@ int main()
 		auto mv = view * mat4(1.f);
 		glLoadMatrixf(&mv[0][0]);
 
-		glUseProgram(program);
+		glUseProgram(grid_program);
 
 		glBegin(GL_LINES);
 		auto offset = vec2(GRIDX, GRIDY) * GRIDS * -0.5f;
