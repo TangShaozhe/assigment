@@ -1,6 +1,7 @@
 ﻿#include <iostream>
 #include <vector>
 
+#include <GL/glew.h>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
@@ -18,6 +19,13 @@ using namespace glm;
 
 GLFWwindow* window = nullptr;
 int err_no;
+
+int check_gl_err()
+{
+	while ((err_no = glGetError()) != GL_NO_ERROR)
+		printf("%d: %s\n", err_no, glewGetErrorString(err_no));
+	return err_no;
+}
 
 GLuint load_texture(const char* tex_file)
 {
@@ -107,6 +115,19 @@ struct Model
 	}
 }cube;
 
+GLuint create_shader(GLuint type, const std::string& source)
+{
+	auto ret = glCreateShader(type);
+	const char* sources[] = {
+		source.c_str()
+	};
+	int lengths[] = {
+		source.size()
+	};
+	glShaderSource(ret, 1, sources, lengths);
+	return ret;
+}
+
 struct Camera
 {
 	vec3 coord = vec3(0.f, 1.f, 0.f);
@@ -142,6 +163,39 @@ struct Camera
 
 template<class T, size_t N>
 constexpr size_t size(T(&)[N]) { return N; }
+
+void prism(float depth, float width, float height, float y_off = 0.f)
+{
+	auto hf_width = width * 0.5f;
+
+	glNormal3f(0.f, 0.f, 1.f);
+	glVertex3f(0.f, 0.f + y_off, 0.f);
+	glVertex3f(width, 0.f + y_off, 0.f);
+	glVertex3f(hf_width, height + y_off, 0.f);
+
+	auto slop_normal1 = normalize(cross(vec3(0.f, 0.f, 1.f), vec3(hf_width, -height, 0.f)));
+	glNormal3f(slop_normal1.x, slop_normal1.y, slop_normal1.z);
+	glVertex3f(hf_width, height + y_off, 0.f);
+	glVertex3f(width, 0.f + y_off, 0.f);
+	glVertex3f(hf_width, height + y_off, -depth);
+	glVertex3f(hf_width, height + y_off, -depth);
+	glVertex3f(width, 0.f + y_off, 0.f);
+	glVertex3f(width, 0.f + y_off, -depth);
+
+	auto slop_normal2 = normalize(cross(vec3(0.f, 0.f, -1.f), vec3(-hf_width, -height, 0.f)));
+	glNormal3f(slop_normal2.x, slop_normal2.y, slop_normal2.z);
+	glVertex3f(hf_width, height + y_off, -depth);
+	glVertex3f(0.f, 0.f + y_off, -depth);
+	glVertex3f(hf_width, height + y_off, 0.f);
+	glVertex3f(hf_width, height + y_off, 0.f);
+	glVertex3f(0.f, 0.f + y_off, -depth);
+	glVertex3f(0.f, 0.f + y_off, 0.f);
+
+	glNormal3f(0.f, 0.f, -1.f);
+	glVertex3f(0.f, 0.f + y_off, -depth);
+	glVertex3f(hf_width, height + y_off, -depth);
+	glVertex3f(width, 0.f + y_off, -depth);
+}
 
 static GLFWkeyfun prev_keyfun = nullptr;
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
@@ -235,6 +289,12 @@ int main()
 	glfwMakeContextCurrent(window);
 	glfwSwapInterval(1);
 
+	if (glewInit() != GLEW_OK)
+	{
+		printf("glew init failed\n");
+		return 0;
+	}
+
 	//if (!cube.load("models/1.obj", "models/1.png"))
 	//	return 0;
 
@@ -249,6 +309,29 @@ int main()
 	prev_keyfun = glfwSetKeyCallback(window, key_callback);
 	prev_mousebuttonfun = glfwSetMouseButtonCallback(window, mouse_button_callback);
 	prev_cursorposfun = glfwSetCursorPosCallback(window, cursor_position_callback);
+
+	auto vertex_shader = create_shader(GL_VERTEX_SHADER,
+		"#version 120\n"
+		"void main() {\n"
+		"	gl_FrontColor = gl_Color;"
+		"	gl_Position = gl_ProjectionMatrix * gl_ModelViewMatrix * gl_Vertex;"
+		"}");
+	auto fragment_shader = create_shader(GL_FRAGMENT_SHADER,
+		"#version 120\n"
+		"void main() {\n"
+		"	gl_FragColor = gl_Color;"
+		"}");
+	glCompileShader(vertex_shader);
+	check_gl_err();
+	glCompileShader(fragment_shader);
+	check_gl_err();
+	auto program = glCreateProgram();
+	glAttachShader(program, vertex_shader);
+	glAttachShader(program, fragment_shader);
+	glLinkProgram(program);
+	check_gl_err();
+
+	auto quadrics = gluNewQuadric();
 
 	while (!glfwWindowShouldClose(window))
 	{
@@ -272,28 +355,75 @@ int main()
 		glEnable(GL_CULL_FACE);
 		glEnable(GL_LIGHTING);
 		glEnable(GL_NORMALIZE);
+		glEnable(GL_LIGHT0);
+		glMatrixMode(GL_MODELVIEW);
+		glLoadIdentity();
+		{
+			auto color = vec4(0.788, 0.88, 1.0, 1.0);
+			auto white = vec4(1.f, 1.f, 1.f, 1.f);
+			auto pos = vec4(0.f, 1.f, 0.f, 0.f);
+			glLightfv(GL_LIGHT0, GL_AMBIENT, &color[0]);
+			glLightfv(GL_LIGHT0, GL_DIFFUSE, &color[0]);
+			glLightfv(GL_LIGHT0, GL_SPECULAR, &white[0]);
+			glLightfv(GL_LIGHT0, GL_POSITION, &pos[0]);
+		}
 
 		auto proj = perspective(radians(45.f), (float)win_width / (float)win_height, 1.f, 1000.f);
 		glMatrixMode(GL_PROJECTION);
 		glLoadMatrixf(&proj[0][0]);
 		glMatrixMode(GL_MODELVIEW);
 		auto view = camera.update();
-		glLoadMatrixf(&view[0][0]);
+		auto mv = view * mat4(1.f);
+		glLoadMatrixf(&mv[0][0]);
+
+		glUseProgram(program);
 
 		glBegin(GL_LINES);
-		glColor3f(0.f, 0.f, 0.f);
 		auto offset = vec2(GRIDX, GRIDY) * GRIDS * -0.5f;
 		for (auto y = 0; y < GRIDY + 1; y++)
 		{
+			glColor3f(0.78f, 0.88f, 0.80f);
 			glVertex3f(0.f + offset.x, 0.f, y * GRIDS + offset.y);
 			glVertex3f(GRIDX * GRIDS + offset.x, 0.f, y * GRIDS + offset.y);
 		}
 		for (auto x = 0; x < GRIDX + 1; x++)
 		{
+			if (x == 8 || x == 9)
+				glColor3f(0.f, 0.f, 0.f);
+			else
+				glColor3f(0.78f, 0.88f, 0.80f);
 			glVertex3f(x * GRIDS + offset.x, 0.f, 0.f + offset.y);
 			glVertex3f(x * GRIDS + offset.x, 0.f, GRIDY * GRIDS + offset.y);
 		}
 		glEnd();
+
+		glUseProgram(0);
+
+		auto train_transform = translate(mat4(1.f), vec3((GRIDX * -0.5f + 8.f) * GRIDS, 0.3f, (GRIDY * 0.5f) * GRIDS));
+		mv = view * train_transform;
+		glLoadMatrixf(&mv[0][0]);
+		glBegin(GL_TRIANGLES);
+		prism(1.5f, 0.5f, 0.5f);
+		prism(0.5f, 0.5f, 0.25f, 0.5f);
+		glEnd();
+		auto draw_wheel = [&](const vec3& pos) {
+			auto wheel_transform = train_transform * translate(mat4(1.f), pos) * rotate(mat4(1.f), radians(90.f), vec3(0.f, 1.f, 0.f));
+			mv = view * wheel_transform * rotate(mat4(1.f), radians(180.f), vec3(0.f, 1.f, 0.f));
+			glLoadMatrixf(&mv[0][0]);
+			gluDisk(quadrics, 0.f, 0.3f, 16, 16);
+			mv = view * wheel_transform * translate(mat4(1.f), vec3(0.f, 0.f, 0.1f));
+			glLoadMatrixf(&mv[0][0]);
+			gluDisk(quadrics, 0.f, 0.3f, 16, 16);
+			mv = view * wheel_transform;
+			glLoadMatrixf(&mv[0][0]);
+			gluCylinder(quadrics, 0.3f, 0.3f, 0.1f, 16, 16);
+		};
+		draw_wheel(vec3(-0.1f, 0.f, 0.f));
+		draw_wheel(vec3(-0.1f, 0.f, -0.6f));
+		draw_wheel(vec3(-0.1f, 0.f, -1.2f));
+		draw_wheel(vec3(0.5f, 0.f, 0.f));
+		draw_wheel(vec3(0.5f, 0.f, -0.6f));
+		draw_wheel(vec3(0.5f, 0.f, -1.2f));
 
 		//ImGui::Render();
 		//ImGui_ImplOpenGL2_RenderDrawData(ImGui::GetDrawData());
