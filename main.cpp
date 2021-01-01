@@ -30,7 +30,7 @@ int check_gl_err()
 GLuint load_texture(const char* tex_file)
 {
 	int img_width, img_height, img_channel;
-	auto img_data = stbi_load(tex_file, &img_width, &img_height, &img_channel, 0);
+	auto img_data = stbi_load(tex_file, &img_width, &img_height, &img_channel, 4);
 	if (!img_data)
 	{
 		printf("cannot load texture\n");
@@ -169,31 +169,49 @@ void prism(float depth, float width, float height, float y_off = 0.f)
 	auto hf_width = width * 0.5f;
 
 	glNormal3f(0.f, 0.f, 1.f);
+	glTexCoord2f(0.f, 0.f);
 	glVertex3f(0.f, 0.f + y_off, 0.f);
+	glTexCoord2f(1.f, 0.f);
 	glVertex3f(width, 0.f + y_off, 0.f);
+	glTexCoord2f(0.f, 1.f);
 	glVertex3f(hf_width, height + y_off, 0.f);
 
 	auto slop_normal1 = normalize(cross(vec3(0.f, 0.f, 1.f), vec3(hf_width, -height, 0.f)));
 	glNormal3f(slop_normal1.x, slop_normal1.y, slop_normal1.z);
+	glTexCoord2f(0.f, 0.f);
 	glVertex3f(hf_width, height + y_off, 0.f);
+	glTexCoord2f(0.f, 1.f);
 	glVertex3f(width, 0.f + y_off, 0.f);
+	glTexCoord2f(1.f, 0.f);
 	glVertex3f(hf_width, height + y_off, -depth);
+	glTexCoord2f(1.f, 0.f);
 	glVertex3f(hf_width, height + y_off, -depth);
+	glTexCoord2f(0.f, 1.f);
 	glVertex3f(width, 0.f + y_off, 0.f);
+	glTexCoord2f(1.f, 1.f);
 	glVertex3f(width, 0.f + y_off, -depth);
 
 	auto slop_normal2 = normalize(cross(vec3(0.f, 0.f, -1.f), vec3(-hf_width, -height, 0.f)));
 	glNormal3f(slop_normal2.x, slop_normal2.y, slop_normal2.z);
+	glTexCoord2f(0.f, 0.f);
 	glVertex3f(hf_width, height + y_off, -depth);
+	glTexCoord2f(0.f, 1.f);
 	glVertex3f(0.f, 0.f + y_off, -depth);
+	glTexCoord2f(1.f, 0.f);
 	glVertex3f(hf_width, height + y_off, 0.f);
+	glTexCoord2f(1.f, 0.f);
 	glVertex3f(hf_width, height + y_off, 0.f);
+	glTexCoord2f(0.f, 1.f);
 	glVertex3f(0.f, 0.f + y_off, -depth);
+	glTexCoord2f(1.f, 1.f);
 	glVertex3f(0.f, 0.f + y_off, 0.f);
 
 	glNormal3f(0.f, 0.f, -1.f);
+	glTexCoord2f(0.f, 0.f);
 	glVertex3f(0.f, 0.f + y_off, -depth);
+	glTexCoord2f(0.f, 1.f);
 	glVertex3f(hf_width, height + y_off, -depth);
+	glTexCoord2f(1.f, 0.f);
 	glVertex3f(width, 0.f + y_off, -depth);
 }
 
@@ -333,6 +351,9 @@ int main()
 
 	auto quadrics = gluNewQuadric();
 
+	auto body_texture = load_texture("scrap.jpg");
+	auto wheel_texture = load_texture("wheels.jpg");
+
 	while (!glfwWindowShouldClose(window))
 	{
 		glfwPollEvents();
@@ -399,6 +420,7 @@ int main()
 
 		glUseProgram(0);
 
+		glBindTexture(GL_TEXTURE_2D, body_texture);
 		auto train_transform = translate(mat4(1.f), vec3((GRIDX * -0.5f + 8.f) * GRIDS, 0.3f, (GRIDY * 0.5f) * GRIDS));
 		mv = view * train_transform;
 		glLoadMatrixf(&mv[0][0]);
@@ -406,6 +428,8 @@ int main()
 		prism(1.5f, 0.5f, 0.5f);
 		prism(0.5f, 0.5f, 0.25f, 0.5f);
 		glEnd();
+
+		glBindTexture(GL_TEXTURE_2D, wheel_texture);
 		auto draw_wheel = [&](const vec3& pos) {
 			auto wheel_transform = train_transform * translate(mat4(1.f), pos) * rotate(mat4(1.f), radians(90.f), vec3(0.f, 1.f, 0.f));
 			mv = view * wheel_transform * rotate(mat4(1.f), radians(180.f), vec3(0.f, 1.f, 0.f));
