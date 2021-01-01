@@ -362,19 +362,41 @@ int main()
 	prev_mousebuttonfun = glfwSetMouseButtonCallback(window, mouse_button_callback);
 	prev_cursorposfun = glfwSetCursorPosCallback(window, cursor_position_callback);
 
-	auto grid_program = create_program(create_shader(GL_VERTEX_SHADER, 
+	auto grid_program = create_program(
+		create_shader(GL_VERTEX_SHADER, 
 		"#version 120\n"
 		"void main() {\n"
 		"	gl_FrontColor = gl_Color;\n"
-		"	gl_BackColor = gl_Color;\n"
 		"	gl_Position = gl_ProjectionMatrix * gl_ModelViewMatrix * gl_Vertex;\n"
-		"}"), create_shader(GL_FRAGMENT_SHADER, 
+		"}"), 
+		create_shader(GL_FRAGMENT_SHADER, 
 		"#version 120\n"
 		"void main() {\n"
 		"	gl_FragColor = gl_Color;\n"
 		"}"));
+	auto object_program = create_program(
+		create_shader(GL_VERTEX_SHADER,
+			"#version 130\n"
+			"varying vec2 uv;\n"
+			"varying vec3 normal;\n"
+			"void main() {\n"
+			"	uv = gl_MultiTexCoord0.xy;\n"
+			"	normal = gl_Normal;\n"
+			"	gl_Position = gl_ProjectionMatrix * gl_ModelViewMatrix * gl_Vertex;\n"
+			"}"),
+		create_shader(GL_FRAGMENT_SHADER,
+			"#version 130\n"
+			"varying vec3 normal;\n"
+			"varying vec2 uv;\n"
+			"uniform sampler2D tex;\n"
+			"void main() {\n"
+			"	float nl = max(0, dot(normal, vec3(0, 1, 0)));\n"
+			"	gl_FragColor = vec4(texture(tex, uv).rgb * (nl + 0.5) * vec3(0.788, 0.88, 1.0), 1.0);\n"
+			"}"));
 
 	auto quadrics = gluNewQuadric();
+	gluQuadricTexture(quadrics, GL_TRUE);
+	gluQuadricNormals(quadrics, GLU_SMOOTH);
 
 	auto body_texture = load_texture("scrap.jpg");
 	auto wheel_texture = load_texture("wheels.jpg");
@@ -399,20 +421,7 @@ int main()
 		glEnable(GL_DEPTH);
 		glEnable(GL_DEPTH_TEST);
 		glEnable(GL_CULL_FACE);
-		glEnable(GL_LIGHTING);
 		glEnable(GL_NORMALIZE);
-		glEnable(GL_LIGHT0);
-		glMatrixMode(GL_MODELVIEW);
-		glLoadIdentity();
-		{
-			auto color = vec4(0.788, 0.88, 1.0, 1.0);
-			auto white = vec4(1.f, 1.f, 1.f, 1.f);
-			auto pos = vec4(0.f, 1.f, 0.f, 0.f);
-			glLightfv(GL_LIGHT0, GL_AMBIENT, &color[0]);
-			glLightfv(GL_LIGHT0, GL_DIFFUSE, &color[0]);
-			glLightfv(GL_LIGHT0, GL_SPECULAR, &white[0]);
-			glLightfv(GL_LIGHT0, GL_POSITION, &pos[0]);
-		}
 
 		auto proj = perspective(radians(45.f), (float)win_width / (float)win_height, 1.f, 1000.f);
 		glMatrixMode(GL_PROJECTION);
@@ -443,10 +452,10 @@ int main()
 		}
 		glEnd();
 
-		glUseProgram(0);
+		glUseProgram(object_program);
 
 		glBindTexture(GL_TEXTURE_2D, body_texture);
-		auto train_transform = translate(mat4(1.f), vec3((GRIDX * -0.5f + 8.f) * GRIDS, 0.3f, (GRIDY * 0.5f) * GRIDS));
+		auto train_transform = translate(mat4(1.f), vec3((GRIDX * -0.5f + 8.f) * GRIDS - 0.15f, 0.3f, (GRIDY * 0.5f) * GRIDS));
 		mv = view * train_transform;
 		glLoadMatrixf(&mv[0][0]);
 		glBegin(GL_TRIANGLES);
