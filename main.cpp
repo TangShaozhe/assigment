@@ -384,30 +384,61 @@ int main()
 	auto object_program = create_program(
 		create_shader(GL_VERTEX_SHADER,
 			"#version 130\n"
+			"uniform mat4 proj_mat;\n"
+			"uniform mat4 view_mat;\n"
+			"uniform mat4 model_mat;\n"
+			"uniform mat3 normal_mat;\n"
+			"uniform vec3 camera_coord;\n"
 			"varying vec2 uv;\n"
 			"varying vec3 normal;\n"
+			"varying vec3 coord;\n"
 			"varying vec3 view;\n"
 			"void main() {\n"
 			"	uv = gl_MultiTexCoord0.xy;\n"
-			"	normal = gl_NormalMatrix * gl_Normal;\n"
-			"	view = normalize(vec3(gl_ModelViewMatrix * gl_Vertex));\n"
-			"	gl_Position = gl_ProjectionMatrix * gl_ModelViewMatrix * gl_Vertex;\n"
+			"	normal = normal_mat * gl_Normal;\n"
+			"	coord = vec3(model_mat * gl_Vertex);\n"
+			"	view = normalize(coord - camera_coord);\n"
+			"	gl_Position = proj_mat * view_mat * model_mat * gl_Vertex;\n"
 			"}"),
 		create_shader(GL_FRAGMENT_SHADER,
 			"#version 130\n"
+			"uniform sampler2D tex;\n"
+			"uniform vec3 point_light1;\n"
+			"uniform vec3 point_light2;\n"
 			"varying vec2 uv;\n"
 			"varying vec3 normal;\n"
+			"varying vec3 coord;\n"
 			"varying vec3 view;\n"
-			"uniform sampler2D tex;\n"
-			"void main() {\n"
-			"	vec3 L = gl_NormalMatrix * vec3(0, 1, 0);\n"
-			"	vec3 N = normal;\n"
-			"	vec3 V = view;\n"
+			"vec3 lighting(vec3 L, vec3 N, vec3 V, vec3 color, vec3 albedo) {\n"
 			"	vec3 R = reflect(L, N);\n"
 			"	float nl = max(0, dot(N, L));\n"
-			"	gl_FragColor = vec4(texture(tex, uv).rgb * (nl * 0.5 + pow(max(dot(R, V), 0.0), 4.0) + 0.5) * vec3(0.788, 0.88, 1.0), 1.0);\n"
-			"	//gl_FragColor = vec4(R, 1.0);\n"
+			"	vec3 diff = albedo * nl * 0.5;\n"
+			"	float spec = pow(max(dot(R, V), 0.0), 8.0) * 0.5;\n"
+			"	return diff + vec3(spec);\n"
+			"}\n"
+			"vec3 point_lighting(vec3 p, vec3 albedo) {\n"
+			"	vec3 L = p - coord;\n"
+			"	float d = length(L);\n"
+			"	float a = 10000.0 / (d * d);\n"
+			"	L = normalize(L);\n"
+			"	return lighting(L, normal, view, vec3(1.0, 0.77, 0.56) * a, albedo);\n"
+			"}\n"
+			"void main() {\n"
+			"	vec3 albedo = texture(tex, uv).rgb;\n"
+			"	vec3 color = vec3(0.0);\n"
+			"	color += albedo * vec3(0.788, 0.88, 1.0) * 0.2; // ambient\n"
+			"	color += lighting(vec3(0, 1, 0), normal, view, vec3(0.788, 0.88, 1.0), albedo); // directional light\n"
+			"	color += point_lighting(point_light1, albedo); // point light1\n"
+			"	color += point_lighting(point_light2, albedo); // point light2\n"
+			"	gl_FragColor = vec4(color, 1.0);\n"
 			"}"));
+	auto proj_mat_id = glGetUniformLocation(object_program, "proj_mat");
+	auto view_mat_id = glGetUniformLocation(object_program, "view_mat");
+	auto model_mat_id = glGetUniformLocation(object_program, "model_mat");
+	auto normal_mat_id = glGetUniformLocation(object_program, "normal_mat");
+	auto camera_coord_id = glGetUniformLocation(object_program, "camera_coord");
+	auto light1_id = glGetUniformLocation(object_program, "point_light1");
+	auto light2_id = glGetUniformLocation(object_program, "point_light2");
 
 	auto quadrics = gluNewQuadric();
 	gluQuadricTexture(quadrics, GL_TRUE);
@@ -417,7 +448,7 @@ int main()
 	auto wheel_texture = load_texture("wheels.jpg");
 
 	auto speed = (GRIDY * GRIDS - 1.5f) / 10.f / 60.f;
-	auto train_pos = GRIDY * 0.5f * GRIDS;
+	auto train_z = GRIDY * 0.5f * GRIDS;
 
 	while (!glfwWindowShouldClose(window))
 	{
@@ -470,25 +501,41 @@ int main()
 		}
 		glEnd();
 
-		glUseProgram(object_program);
-
 		if (move == 1)
 		{
-			train_pos -= speed;
-			if (train_pos <= GRIDY * -0.5f * GRIDS + 1.5f)
+			train_z -= speed;
+			if (train_z <= GRIDY * -0.5f * GRIDS + 1.5f)
 				move = 2;
 		}
 		else if (move == 2)
 		{
-			train_pos += speed;
-			if (train_pos >= GRIDY * 0.5f * GRIDS)
+			train_z += speed;
+			if (train_z >= GRIDY * 0.5f * GRIDS)
 				move = 1;
 		}
 
+		auto train_pos = vec3((GRIDX * -0.5f + 8.f) * GRIDS - 0.15f, 0.3f, train_z);
+
+		glUseProgram(object_program);
+		glUniformMatrix4fv(proj_mat_id, 1, false, &proj[0][0]);
+		glUniformMatrix4fv(view_mat_id, 1, false, &view[0][0]);
+		glUniform3fv(camera_coord_id, 1, &camera.coord[0]);
+		{
+			auto p = train_pos + vec3(0.15, 0.55, -1.6);
+			glUniform3fv(light1_id, 1, &p[0]);
+		}
+		{
+			auto p = train_pos + vec3(0.35, 0.55, -1.6);
+			glUniform3fv(light2_id, 1, &p[0]);
+		}
+
+		auto train_transform = translate(mat4(1.f), train_pos);
+		{
+			glUniformMatrix4fv(model_mat_id, 1, false, &train_transform[0][0]);
+			auto nor = transpose(inverse(mat3(train_transform)));
+			glUniformMatrix3fv(normal_mat_id, 1, false, &nor[0][0]);
+		}
 		glBindTexture(GL_TEXTURE_2D, body_texture);
-		auto train_transform = translate(mat4(1.f), vec3((GRIDX * -0.5f + 8.f) * GRIDS - 0.15f, 0.3f, train_pos));
-		mv = view * train_transform;
-		glLoadMatrixf(&mv[0][0]);
 		glBegin(GL_TRIANGLES);
 		prism(1.5f, 0.5f, 0.5f);
 		prism(0.5f, 0.5f, 0.25f, 0.5f);
@@ -503,14 +550,25 @@ int main()
 				wheel_transform = wheel_transform * rotate(mat4(1.f), radians(ang), vec3(0.f, 0.f, 1.f));
 				ang += move == 1 ? -12.f : 12.f;
 			}
-			mv = view * wheel_transform * rotate(mat4(1.f), radians(180.f), vec3(0.f, 1.f, 0.f));
-			glLoadMatrixf(&mv[0][0]);
+			{
+				auto m = wheel_transform * rotate(mat4(1.f), radians(180.f), vec3(0.f, 1.f, 0.f));
+				glUniformMatrix4fv(model_mat_id, 1, false, &m[0][0]);
+				auto nor = transpose(inverse(mat3(m)));
+				glUniformMatrix3fv(normal_mat_id, 1, false, &nor[0][0]);
+			}
 			gluDisk(quadrics, 0.f, 0.3f, 16, 16);
-			mv = view * wheel_transform * translate(mat4(1.f), vec3(0.f, 0.f, 0.1f));
-			glLoadMatrixf(&mv[0][0]);
+			{
+				auto m = wheel_transform * translate(mat4(1.f), vec3(0.f, 0.f, 0.1f));
+				glUniformMatrix4fv(model_mat_id, 1, false, &m[0][0]);
+				auto nor = transpose(inverse(mat3(m)));
+				glUniformMatrix3fv(normal_mat_id, 1, false, &nor[0][0]);
+			}
 			gluDisk(quadrics, 0.f, 0.3f, 16, 16);
-			mv = view * wheel_transform;
-			glLoadMatrixf(&mv[0][0]);
+			{
+				glUniformMatrix4fv(model_mat_id, 1, false, &wheel_transform[0][0]);
+				auto nor = transpose(inverse(mat3(wheel_transform)));
+				glUniformMatrix3fv(normal_mat_id, 1, false, &nor[0][0]);
+			}
 			gluCylinder(quadrics, 0.3f, 0.3f, 0.1f, 16, 16);
 		};
 		draw_wheel(vec3(-0.1f, 0.f, 0.f));
