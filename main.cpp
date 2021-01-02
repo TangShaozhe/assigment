@@ -54,7 +54,7 @@ struct Model
 	std::vector<vec3> normals;
 	std::vector<vec2> uvs;
 	std::vector<uint> indices;
-	GLuint texture;
+	GLuint texture = 0;
 
 	bool load(const char* obj_file, const char* tex_file)
 	{
@@ -86,21 +86,22 @@ struct Model
 			}
 		}
 
-		texture = load_texture(tex_file);
-		if (!texture)
+		if (tex_file)
 		{
-			printf("cannot load texture\n");
-			return false;
+			texture = load_texture(tex_file);
+			if (!texture)
+			{
+				printf("cannot load texture\n");
+				return false;
+			}
 		}
 
 		return true;
 	}
 
-	void draw(const mat4& MV)
+	void draw()
 	{
 		glBindTexture(GL_TEXTURE_2D, texture);
-		glMatrixMode(GL_MODELVIEW);
-		glLoadMatrixf(&MV[0][0]);
 		glBegin(GL_TRIANGLES);
 		for (auto i : indices)
 		{
@@ -113,7 +114,7 @@ struct Model
 		}
 		glEnd();
 	}
-}cube;
+}cow;
 
 GLuint create_shader(GLuint type, const std::string& source)
 {
@@ -354,8 +355,8 @@ int main()
 		return 0;
 	}
 
-	//if (!cube.load("models/1.obj", "models/1.png"))
-	//	return 0;
+	if (!cow.load("cow.obj", nullptr))
+		return 0;
 
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
@@ -395,7 +396,7 @@ int main()
 			"varying vec3 view;\n"
 			"void main() {\n"
 			"	uv = gl_MultiTexCoord0.xy;\n"
-			"	normal = normal_mat * gl_Normal;\n"
+			"	normal = normalize(normal_mat * gl_Normal);\n"
 			"	coord = vec3(model_mat * gl_Vertex);\n"
 			"	view = normalize(coord - camera_coord);\n"
 			"	gl_Position = proj_mat * view_mat * model_mat * gl_Vertex;\n"
@@ -577,6 +578,16 @@ int main()
 		draw_wheel(vec3(0.5f, 0.f, 0.f));
 		draw_wheel(vec3(0.5f, 0.f, -0.6f));
 		draw_wheel(vec3(0.5f, 0.f, -1.2f));
+
+		{
+			auto m = scale(mat4(1.f), vec3(0.1f));
+			m = rotate(m, radians(-90.f), vec3(1.f, 0.f, 0.f));
+			m = translate(m, vec3((GRIDX * -0.5f + 8.f) * GRIDS, 0.f, (GRIDY * 0.5f) * GRIDS));
+			glUniformMatrix4fv(model_mat_id, 1, false, &m[0][0]);
+			auto nor = transpose(inverse(mat3(m)));
+			glUniformMatrix3fv(normal_mat_id, 1, false, &nor[0][0]);
+		}
+		cow.draw();
 
 		//ImGui::Render();
 		//ImGui_ImplOpenGL2_RenderDrawData(ImGui::GetDrawData());
