@@ -249,6 +249,8 @@ void prism(float depth, float width, float height, float y_off = 0.f)
 	glVertex3f(width, 0.f + y_off, -depth);
 }
 
+auto move = 0; // stand, forward, backward
+
 static GLFWkeyfun prev_keyfun = nullptr;
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
@@ -283,6 +285,11 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
 			camera.right = true;
 		else if (action == GLFW_RELEASE)
 			camera.right = false;
+	}
+	else if (key == GLFW_KEY_SPACE)
+	{
+		if (action == GLFW_PRESS && move == 0)
+			move = 1;
 	}
 }
 
@@ -379,19 +386,27 @@ int main()
 			"#version 130\n"
 			"varying vec2 uv;\n"
 			"varying vec3 normal;\n"
+			"varying vec3 view;\n"
 			"void main() {\n"
 			"	uv = gl_MultiTexCoord0.xy;\n"
-			"	normal = gl_Normal;\n"
+			"	normal = gl_NormalMatrix * gl_Normal;\n"
+			"	view = normalize(vec3(gl_ModelViewMatrix * gl_Vertex));\n"
 			"	gl_Position = gl_ProjectionMatrix * gl_ModelViewMatrix * gl_Vertex;\n"
 			"}"),
 		create_shader(GL_FRAGMENT_SHADER,
 			"#version 130\n"
-			"varying vec3 normal;\n"
 			"varying vec2 uv;\n"
+			"varying vec3 normal;\n"
+			"varying vec3 view;\n"
 			"uniform sampler2D tex;\n"
 			"void main() {\n"
-			"	float nl = max(0, dot(normal, vec3(0, 1, 0)));\n"
-			"	gl_FragColor = vec4(texture(tex, uv).rgb * (nl + 0.5) * vec3(0.788, 0.88, 1.0), 1.0);\n"
+			"	vec3 L = gl_NormalMatrix * vec3(0, 1, 0);\n"
+			"	vec3 N = normal;\n"
+			"	vec3 V = view;\n"
+			"	vec3 R = reflect(L, N);\n"
+			"	float nl = max(0, dot(N, L));\n"
+			"	gl_FragColor = vec4(texture(tex, uv).rgb * (nl * 0.5 + pow(max(dot(R, V), 0.0), 4.0) + 0.5) * vec3(0.788, 0.88, 1.0), 1.0);\n"
+			"	//gl_FragColor = vec4(R, 1.0);\n"
 			"}"));
 
 	auto quadrics = gluNewQuadric();
@@ -400,6 +415,9 @@ int main()
 
 	auto body_texture = load_texture("scrap.jpg");
 	auto wheel_texture = load_texture("wheels.jpg");
+
+	auto speed = (GRIDY * GRIDS - 1.5f) / 10.f / 60.f;
+	auto train_pos = GRIDY * 0.5f * GRIDS;
 
 	while (!glfwWindowShouldClose(window))
 	{
@@ -454,8 +472,21 @@ int main()
 
 		glUseProgram(object_program);
 
+		if (move == 1)
+		{
+			train_pos -= speed;
+			if (train_pos <= GRIDY * -0.5f * GRIDS + 1.5f)
+				move = 2;
+		}
+		else if (move == 2)
+		{
+			train_pos += speed;
+			if (train_pos >= GRIDY * 0.5f * GRIDS)
+				move = 1;
+		}
+
 		glBindTexture(GL_TEXTURE_2D, body_texture);
-		auto train_transform = translate(mat4(1.f), vec3((GRIDX * -0.5f + 8.f) * GRIDS - 0.15f, 0.3f, (GRIDY * 0.5f) * GRIDS));
+		auto train_transform = translate(mat4(1.f), vec3((GRIDX * -0.5f + 8.f) * GRIDS - 0.15f, 0.3f, train_pos));
 		mv = view * train_transform;
 		glLoadMatrixf(&mv[0][0]);
 		glBegin(GL_TRIANGLES);
@@ -466,6 +497,12 @@ int main()
 		glBindTexture(GL_TEXTURE_2D, wheel_texture);
 		auto draw_wheel = [&](const vec3& pos) {
 			auto wheel_transform = train_transform * translate(mat4(1.f), pos) * rotate(mat4(1.f), radians(90.f), vec3(0.f, 1.f, 0.f));
+			if (move != 0)
+			{
+				static auto ang = 0.f;
+				wheel_transform = wheel_transform * rotate(mat4(1.f), radians(ang), vec3(0.f, 0.f, 1.f));
+				ang += move == 1 ? -12.f : 12.f;
+			}
 			mv = view * wheel_transform * rotate(mat4(1.f), radians(180.f), vec3(0.f, 1.f, 0.f));
 			glLoadMatrixf(&mv[0][0]);
 			gluDisk(quadrics, 0.f, 0.3f, 16, 16);
